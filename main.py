@@ -4,7 +4,6 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
 # Setup logging
@@ -14,61 +13,59 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN not found. Set it in .env file")
+GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")  # ID grup Lunero Degen Hub
+
+# Topic IDs (dari @RawDataBot)
+SIGNAL_TOPIC_ID = int(os.getenv("SIGNAL_TOPIC_ID", 0))
+ANALYZE_TOPIC_ID = int(os.getenv("ANALYZE_TOPIC_ID", 0))
+TRADE_TOPIC_ID = int(os.getenv("TRADE_TOPIC_ID", 0))
+PORTFOLIO_TOPIC_ID = int(os.getenv("PORTFOLIO_TOPIC_ID", 0))
+AUTOPSY_TOPIC_ID = int(os.getenv("AUTOPSY_TOPIC_ID", 0))
+GAS_TOPIC_ID = int(os.getenv("GAS_TOPIC_ID", 0))
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "🛡️ LUNERO DEGEN BOT — Forensic Intelligence Assistant\n\n"
-        "Saya bukan sinyal trading ajaib. Saya adalah forensic investigator "
-        "yang membantu Anda menghindari rug pull & late entry.\n\n"
-        "✅ Fitur Utama:\n"
-        "• Deteksi rug pull 60 detik sebelum terjadi\n"
-        "• Analisis pump group behavioral patterns\n"
-        "• Prediksi dump window berdasarkan data historis\n"
-        "• FOMO Coach untuk lawan bias emosional Anda\n\n"
-        "⚠️ DISCLAIMER:\n"
-        "95% memecoin rug pull dalam 24 jam. Gunakan HANYA modal yang siap hilang 100%.\n\n"
-        "Mulai dengan:\n"
-        "/signal — Lihat channel signal utama\n"
-        "/help — Panduan lengkap"
+        "Semua aktivitas terjadi di grup:\n"
+        "👉 t.me/LuneroDegenHub\n\n"
+        "Topik tersedia:\n"
+        "• 📡 #signal — Auto-announce peluang\n"
+        "• 🔍 #analyze — Analisis token spesifik\n"
+        "• ⚡ #trade — Eksekusi semi-auto\n"
+        "• 📊 #portfolio — Tracking PnL\n"
+        "• 🔬 #autopsy — Post-trade lessons\n"
+        "• ⛽ #gas — Gas optimizer alerts\n\n"
+        "⚠️ DISCLAIMER: 95% memecoin rug pull dalam 24 jam."
     )
-    
     await update.message.reply_text(welcome_text)
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = (
-        "📚 LUNERO DEGEN BOT — Panduan Penggunaan\n\n"
-        "🤖 CARA KERJA:\n"
-        "1. @LuneroSignal: Terima auto-announce peluang berkualitas\n"
-        "2. @LuneroAnalyze: Dapatkan deep forensic report + reasoning\n"
-        "3. @LuneroTrade: Eksekusi semi-auto aman via Wallet Connect\n"
-        "4. @LuneroPort: Monitor portfolio real-time (read-only)\n"
-        "5. @LuneroAutopsy: Pelajari dari setiap trade yang selesai\n"
-        "6. @LuneroGas: Dapatkan alert gas fee optimal\n\n"
-        "⚠️ ATURAN WAJIB:\n"
-        "• Max position size: 5% modal per trade\n"
-        "• Selalu verifikasi reasoning di @LuneroAnalyze sebelum entry\n"
-        "• Bot TIDAK pegang private key Anda — Anda selalu approve manual\n"
-        "• 95% memecoin rug pull dalam 24 jam — siap kehilangan 100%"
+async def send_signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Contoh: kirim signal ke topik #signal"""
+    if not GROUP_CHAT_ID or not SIGNAL_TOPIC_ID:
+        await update.message.reply_text("❌ Topic ID belum dikonfigurasi!")
+        return
+        
+    signal_text = (
+        "🚨 DEGEN SIGNAL — $MOONSHOT\n"
+        "✅ Setup Quality: 89/100\n"
+        "⏰ Valid window: Next 60 seconds\n\n"
+        "⚡ [ ANALYZE ] [ TRADE ] [ TRACK ]"
     )
-    await update.message.reply_text(help_text)
-
-async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📡 CHANNEL SIGNAL UTAMA:\n"
-        "https://t.me/lunerosignal\n\n"
-        "Di sini Anda akan menerima auto-announce peluang berkualitas "
-        "dengan Setup Quality Score ≥82/100."
+    
+    await context.bot.send_message(
+        chat_id=GROUP_CHAT_ID,
+        message_thread_id=SIGNAL_TOPIC_ID,
+        text=signal_text
     )
+    await update.message.reply_text("✅ Signal dikirim ke #signal!")
 
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("signal", signal))
+    application.add_handler(CommandHandler("signal", send_signal))
     
     application.run_polling()
 
