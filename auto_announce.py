@@ -5,10 +5,8 @@ from telegram.ext import ContextTypes
 from config import GROUP_CHAT_ID, SIGNAL_TOPIC_ID, ANALYZE_TOPIC_ID
 
 PUMP_FUN_NEW_URL = "https://api.pump.fun/coins?limit=20&offset=0&sort=created_timestamp&order=DESC"
-DEXSCREENER_PAIR_URL = "https://api.dexscreener.com/latest/dex/pairs/solana/{pair_address}"
 
 async def fetch_new_tokens():
-    """Ambil token baru dari Pump.fun"""
     try:
         response = requests.get(PUMP_FUN_NEW_URL, timeout=10)
         response.raise_for_status()
@@ -18,46 +16,16 @@ async def fetch_new_tokens():
         return None
 
 def is_valid_signal(token_data):
-    """Filter token berkualitas"""
     try:
-        # Hitung usia token (dalam menit)
-        created_at = token_data.get("created_timestamp", 0) / 1000  # Konversi ms ke detik
+        created_at = token_data.get("created_timestamp", 0) / 1000
         age_minutes = (datetime.now(timezone.utc).timestamp() - created_at) / 60
-        
-        # Ambil data penting
         liquidity = token_data.get("liquidity", 0)
         price = token_data.get("price", 0)
-        market_cap = token_data.get("market_cap", 0)
-        
-        # Kriteria signal
-        if age_minutes > 10:  # Hanya token <10 menit
-            return False
-        if liquidity < 10000:  # Minimal LP $10k
-            return False
-        if price == 0 or market_cap == 0:
-            return False
-            
-        return True
-    except Exception as e:
-        print(f"Error validating token: {e}")
+        return (age_minutes <= 10 and liquidity >= 10000 and price > 0)
+    except:
         return False
 
-async def get_dexscreener_data(mint_address):
-    """Ambil data tambahan dari DexScreener berdasarkan mint address"""
-    try:
-        # Format pair address untuk DexScreener: So1..._mint...
-        pair_address = f"So11111111111111111111111111111111111111112_{mint_address}"
-        url = DEXSCREENER_PAIR_URL.format(pair_address=pair_address)
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("pairs", [{}])[0] if data.get("pairs") else {}
-        return {}
-    except:
-        return {}
-
 async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
-    """Auto-announce berbasis Pump.fun + DexScreener"""
     tokens = await fetch_new_tokens()
     if not tokens:
         return
@@ -66,7 +34,6 @@ async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
         if not is_valid_signal(token):
             continue
             
-        # Ambil data dasar
         mint_address = token.get("mint", "")
         token_name = token.get("name", "Unknown")
         token_symbol = token.get("symbol", "???")
@@ -74,9 +41,6 @@ async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
         liquidity = token.get("liquidity", 0)
         created_at = token.get("created_timestamp", 0) / 1000
         age_minutes = (datetime.now(timezone.utc).timestamp() - created_at) / 60
-        
-        # Dapatkan data tambahan dari DexScreener
-        dex_data = await get_dexscreener_data(mint_address) if mint_address else {}
         
         # Kirim ke #signal
         signal_text = (
@@ -97,11 +61,20 @@ async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
         # Kirim analisis ke #analyze
         if ANALYZE_TOPIC_ID:
             await asyncio.sleep(2)
-            analysis_text = generate_forensic_report(token, dex_data)
+            analysis_text = (
+                f"🔍 FORENSIC ANALYSIS: ${token_symbol} ({token_name})\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 PUMP CYCLE: SEEDING (menit ke-{age_minutes:.1f})\n"
+                f"💧 LIQUIDITY: ${liquidity:,.0f}\n"
+                f"💰 MARKET CAP: ${token.get('market_cap', 0):,.0f}\n"
+                f"📈 LIQUIDITY HEATMAP: {'🟢 LOW SLIPPAGE' if liquidity >= 50000 else '🟡 MODERATE' if liquidity >= 20000 else '🔴 HIGH SLIPPAGE'}\n\n"
+                f"✅ SETUP QUALITY: {min(85 + (10 if liquidity >= 50000 else 0) + (5 if age_minutes <= 3 else 0), 100)}/100\n"
+                f"⚡ [ TRADE WITH SETTINGS ] [ CUSTOMIZE RISK ]"
+            )
             await context.bot.send_message(
                 chat_id=GROUP_CHAT_ID,
                 message_thread_id=ANALYZE_TOPIC_ID,
                 text=analysis_text
             )
             
-        break  # Kirim 1 token terbaik per cycle
+        break
