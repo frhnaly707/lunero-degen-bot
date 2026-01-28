@@ -1,4 +1,3 @@
-# auto_announce.py
 import asyncio
 import requests
 from datetime import datetime, timezone
@@ -8,9 +7,7 @@ from config import GROUP_CHAT_ID, SIGNAL_TOPIC_ID, ANALYZE_TOPIC_ID, BITQUERY_AP
 BITQUERY_URL = "https://graphql.bitquery.io/"
 
 def get_new_pools_query():
-    """Query GraphQL untuk deteksi pool baru di Raydium (Solana)"""
     ten_minutes_ago = int(datetime.now(timezone.utc).timestamp() - 600)
-    
     return {
         "query": f"""
         query {{
@@ -20,7 +17,7 @@ def get_new_pools_query():
               orderBy: {{descending: Block_Time}}
               where: {{
                 Trade: {{
-                  AmountIn: {{greaterThan: "1000000000"}} # >1 SOL
+                  AmountIn: {{greaterThan: "100000000"}} # >0.1 SOL
                 }}
                 Block: {{
                   Time: {{greaterThan: {ten_minutes_ago}}}
@@ -49,12 +46,8 @@ def get_new_pools_query():
     }
 
 async def fetch_new_pools():
-    """Ambil data dari Bitquery"""
     try:
-        headers = {
-            "X-API-KEY": BITQUERY_API_KEY,
-            "Content-Type": "application/json"
-        }
+        headers = {"X-API-KEY": BITQUERY_API_KEY, "Content-Type": "application/json"}
         response = requests.post(BITQUERY_URL, json=get_new_pools_query(), headers=headers, timeout=10)
         response.raise_for_status()
         return response.json()
@@ -63,19 +56,16 @@ async def fetch_new_pools():
         return None
 
 def is_valid_signal(trade):
-    """Validasi transaksi"""
     try:
         amount_in = float(trade["Trade"]["AmountIn"]) / 1e9  # SOL
         mint = trade["Trade"]["Currency"]["MintAddress"]
-        return amount_in >= 1.0 and mint and len(mint) == 44
+        return amount_in >= 0.1 and mint and len(mint) == 44
     except:
         return False
 
 async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
-    """Kirim signal ke grup"""
     data = await fetch_new_pools()
     if not data or "data" not in data or "solana" not in data["data"]:
-        print("❌ No data from Bitquery")
         return
         
     trades = data["data"]["solana"]["dexTrades"]
@@ -86,7 +76,6 @@ async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
         if not is_valid_signal(trade):
             continue
             
-        # Ambil data
         token_name = trade["Trade"]["Currency"]["Name"] or "Unknown"
         token_symbol = trade["Trade"]["Currency"]["Symbol"] or "???"
         mint_address = trade["Trade"]["Currency"]["MintAddress"]
@@ -133,4 +122,3 @@ async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
             )
             
         break  # Hanya kirim 1 signal terbaik per cycle
-
