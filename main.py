@@ -31,6 +31,7 @@ def main():
     application.add_handler(CommandHandler("analyze", analyze_token))
     application.add_handler(CommandHandler("gas", send_gas_alert))
     
+    # Jalankan auto-announce di background
     threading.Thread(target=lambda: asyncio.run(start_auto_announce(application)), daemon=True).start()
     application.run_polling()
 
