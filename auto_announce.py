@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes
 from config import GROUP_CHAT_ID, SIGNAL_TOPIC_ID, ANALYZE_TOPIC_ID, MORALIS_API_KEY
 
 # Endpoint resmi Moralis untuk Pump.fun tokens
-MORALIS_PUMP_FUN_URL = "https://deep-index.moralis.io/api/v2.2/pumpfun/tokens"
+MORALIS_PUMP_FUN_NEW = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/new"
 
 headers = {
     "X-API-Key": MORALIS_API_KEY,
@@ -15,11 +15,7 @@ headers = {
 async def fetch_new_pumpfun_tokens():
     """Ambil token baru dari Moralis Pump.fun API"""
     try:
-        params = {
-            "chain": "solana",
-            "limit": 20
-        }
-        response = requests.get(MORALIS_PUMP_FUN_URL, headers=headers, params=params, timeout=10)
+        response = requests.get(MORALIS_PUMP_FUN_NEW, headers=headers, timeout=10)
         response.raise_for_status()
         return response.json()
     except Exception as e:
