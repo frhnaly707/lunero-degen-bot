@@ -1,54 +1,106 @@
+# auto_announce.py
 import asyncio
 import requests
 from datetime import datetime, timezone
 from telegram.ext import ContextTypes
-from config import GROUP_CHAT_ID, SIGNAL_TOPIC_ID, ANALYZE_TOPIC_ID
+from config import GROUP_CHAT_ID, SIGNAL_TOPIC_ID, ANALYZE_TOPIC_ID, BITQUERY_API_KEY
 
-PUMP_FUN_NEW_URL = "https://api.pump.fun/coins?limit=20&offset=0&sort=created_timestamp&order=DESC"
+BITQUERY_URL = "https://graphql.bitquery.io/"
 
-async def fetch_new_tokens():
+def get_new_pools_query():
+    """Query GraphQL untuk deteksi pool baru di Raydium (Solana)"""
+    ten_minutes_ago = int(datetime.now(timezone.utc).timestamp() - 600)
+    
+    return {
+        "query": f"""
+        query {{
+          solana {{
+            dexTrades(
+              limit: {{count: 5}}
+              orderBy: {{descending: Block_Time}}
+              where: {{
+                Trade: {{
+                  AmountIn: {{greaterThan: "1000000000"}} # >1 SOL
+                }}
+                Block: {{
+                  Time: {{greaterThan: {ten_minutes_ago}}}
+                }}
+                DEX: {{Protocol: {{in: ["Raydium"]}}}}
+              }}
+            ) {{
+              Trade {{
+                AmountIn
+                Currency {{
+                  Symbol
+                  Name
+                  MintAddress
+                }}
+              }}
+              Block {{
+                Time
+              }}
+              Transaction {{
+                Hash
+              }}
+            }}
+          }}
+        }}
+        """
+    }
+
+async def fetch_new_pools():
+    """Ambil data dari Bitquery"""
     try:
-        response = requests.get(PUMP_FUN_NEW_URL, timeout=10)
+        headers = {
+            "X-API-KEY": BITQUERY_API_KEY,
+            "Content-Type": "application/json"
+        }
+        response = requests.post(BITQUERY_URL, json=get_new_pools_query(), headers=headers, timeout=10)
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        print(f"Error fetching Pump.fun  {e}")
+        print(f"Bitquery error: {e}")
         return None
 
-def is_valid_signal(token_data):
+def is_valid_signal(trade):
+    """Validasi transaksi"""
     try:
-        created_at = token_data.get("created_timestamp", 0) / 1000
-        age_minutes = (datetime.now(timezone.utc).timestamp() - created_at) / 60
-        liquidity = token_data.get("liquidity", 0)
-        price = token_data.get("price", 0)
-        return (age_minutes <= 10 and liquidity >= 10000 and price > 0)
+        amount_in = float(trade["Trade"]["AmountIn"]) / 1e9  # SOL
+        mint = trade["Trade"]["Currency"]["MintAddress"]
+        return amount_in >= 1.0 and mint and len(mint) == 44
     except:
         return False
 
 async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
-    tokens = await fetch_new_tokens()
-    if not tokens:
+    """Kirim signal ke grup"""
+    data = await fetch_new_pools()
+    if not data or "data" not in data or "solana" not in data["data"]:
         return
         
-    for token in tokens:
-        if not is_valid_signal(token):
+    trades = data["data"]["solana"]["dexTrades"]
+    if not trades:
+        return
+        
+    for trade in trades:
+        if not is_valid_signal(trade):
             continue
             
-        mint_address = token.get("mint", "")
-        token_name = token.get("name", "Unknown")
-        token_symbol = token.get("symbol", "???")
-        price = token.get("price", 0)
-        liquidity = token.get("liquidity", 0)
-        created_at = token.get("created_timestamp", 0) / 1000
-        age_minutes = (datetime.now(timezone.utc).timestamp() - created_at) / 60
+        # Ambil data
+        token_name = trade["Trade"]["Currency"]["Name"] or "Unknown"
+        token_symbol = trade["Trade"]["Currency"]["Symbol"] or "???"
+        mint_address = trade["Trade"]["Currency"]["MintAddress"]
+        amount_in = float(trade["Trade"]["AmountIn"]) / 1e9
+        block_time = trade["Block"]["Time"]
+        tx_hash = trade["Transaction"]["Hash"]
+        age_minutes = (datetime.now(timezone.utc).timestamp() - block_time) / 60
         
         # Kirim ke #signal
         signal_text = (
             f"🚨 DEGEN SIGNAL — ${token_symbol} ({token_name})\n"
             f"✅ Setup Quality: 85/100\n"
             f"⏰ Age: {age_minutes:.1f} minutes\n"
-            f"💧 Liquidity: ${liquidity:,.0f}\n"
-            f"💰 Price: ${price:.8f}\n\n"
+            f"💧 Initial Buy: {amount_in:.2f} SOL\n"
+            f"🔗 TX: {tx_hash[:10]}...\n\n"
             f"⚡ [ ANALYZE ] [ TRADE ] [ TRACK ]"
         )
         
@@ -62,19 +114,21 @@ async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
         if ANALYZE_TOPIC_ID:
             await asyncio.sleep(2)
             analysis_text = (
-                f"🔍 FORENSIC ANALYSIS: ${token_symbol} ({token_name})\n"
+                f"🔍 FORENSIC ANALYSIS: ${token_symbol}\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"📊 PUMP CYCLE: SEEDING (menit ke-{age_minutes:.1f})\n"
-                f"💧 LIQUIDITY: ${liquidity:,.0f}\n"
-                f"💰 MARKET CAP: ${token.get('market_cap', 0):,.0f}\n"
-                f"📈 LIQUIDITY HEATMAP: {'🟢 LOW SLIPPAGE' if liquidity >= 50000 else '🟡 MODERATE' if liquidity >= 20000 else '🔴 HIGH SLIPPAGE'}\n\n"
-                f"✅ SETUP QUALITY: {min(85 + (10 if liquidity >= 50000 else 0) + (5 if age_minutes <= 3 else 0), 100)}/100\n"
+                f"📊 INITIAL BUY: {amount_in:.2f} SOL\n"
+                f"⏰ DETECTED: {age_minutes:.1f} minutes ago\n"
+                f"🪙 MINT: `{mint_address}`\n"
+                f"🔗 FULL TX: [{tx_hash[:10]}...](https://solscan.io/tx/{tx_hash})\n\n"
+                f"✅ SETUP QUALITY: 85/100\n"
+                f"⚠️ RISK: Verify contract before trading\n\n"
                 f"⚡ [ TRADE WITH SETTINGS ] [ CUSTOMIZE RISK ]"
             )
             await context.bot.send_message(
                 chat_id=GROUP_CHAT_ID,
                 message_thread_id=ANALYZE_TOPIC_ID,
-                text=analysis_text
+                text=analysis_text,
+                parse_mode="Markdown"
             )
             
-        break
+        break  # Hanya kirim 1 signal terbaik per cycle
