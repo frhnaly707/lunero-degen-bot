@@ -36,7 +36,7 @@ def is_valid_signal(pair):
 
 async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
     data = await fetch_new_pairs()
-    if not data or "pairs" not in 
+    if not data or "pairs" not in data:
         return
         
     for pair in data["pairs"]:
@@ -75,4 +75,5 @@ async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
                 text=forensic_report
             )
             
+
         break
