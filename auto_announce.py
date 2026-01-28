@@ -75,6 +75,7 @@ async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
     """Kirim signal ke grup"""
     data = await fetch_new_pools()
     if not data or "data" not in data or "solana" not in data["data"]:
+        print("❌ No data from Bitquery")
         return
         
     trades = data["data"]["solana"]["dexTrades"]
@@ -132,3 +133,4 @@ async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
             )
             
         break  # Hanya kirim 1 signal terbaik per cycle
+
