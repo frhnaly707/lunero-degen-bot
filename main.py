@@ -1,21 +1,20 @@
 import logging
 import os
+import asyncio
+import threading
+import requests
+from datetime import datetime, timezone
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
-from dotenv import load_dotenv
-
-# ✅ Pastikan ini ada — tanpa ini, logger tidak dikenal
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+from telegram.ext import (
+    Application, 
+    CommandHandler, 
+    ContextTypes,
+    filters
 )
-logger = logging.getLogger(__name__)
+from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-
-# Tambahkan ini di bawah load_dotenv()
-logger.info(f"SIGNAL_TOPIC_ID loaded: {os.getenv('SIGNAL_TOPIC_ID')}")
 
 # Setup logging
 logging.basicConfig(
@@ -39,6 +38,94 @@ GAS_TOPIC_ID = int(os.getenv("GAS_TOPIC_ID", 0))
 # Validate required variables
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN is required")
+
+# DexScreener API constants
+DEXSCREENER_SOLANA_URL = "https://api.dexscreener.com/latest/dex/chains/solana"
+
+async def fetch_new_pairs():
+    """Ambil token baru dari DexScreener"""
+    try:
+        response = requests.get(DEXSCREENER_SOLANA_URL, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error fetching DexScreener data: {e}")
+        return None
+
+def is_valid_signal(pair):
+    """Filter token berkualitas"""
+    try:
+        created_at = pair.get("pairCreatedAt", 0)
+        if created_at == 0:
+            return False
+            
+        age_minutes = (datetime.now(timezone.utc).timestamp() * 1000 - created_at) / 60000
+        
+        price_usd = float(pair.get("priceUsd", 0) or 0)
+        liquidity_usd = float(pair.get("liquidity", {}).get("usd", 0) or 0)
+        price_change_5m = float(pair.get("priceChange", {}).get("h5", 0) or 0)
+        
+        # Kriteria signal
+        if age_minutes > 10:  # Hanya token <10 menit
+            return False
+        if liquidity_usd < 10000:  # Minimal LP $10k
+            return False
+        if price_usd == 0:
+            return False
+        if price_change_5m > 300:  # Hindari late entry
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error validating pair: {e}")
+        return False
+
+async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
+    """Fungsi utama auto-announce"""
+    data = await fetch_new_pairs()
+    if not data or "pairs" not in data:
+        return
+        
+    for pair in data["pairs"]:
+        if not is_valid_signal(pair):
+            continue
+            
+        token_name = pair.get("baseToken", {}).get("name", "Unknown")
+        token_symbol = pair.get("baseToken", {}).get("symbol", "???")
+        price_usd = float(pair.get("priceUsd", 0) or 0)
+        liquidity_usd = float(pair.get("liquidity", {}).get("usd", 0) or 0)
+        age_minutes = (datetime.now(timezone.utc).timestamp() * 1000 - pair.get("pairCreatedAt", 0)) / 60000
+        
+        signal_text = (
+            f"🚨 DEGEN SIGNAL — ${token_symbol} ({token_name})\n"
+            f"✅ Setup Quality: 85/100\n"
+            f"⏰ Age: {age_minutes:.1f} minutes\n"
+            f"💧 Liquidity: ${liquidity_usd:,.0f}\n"
+            f"💰 Price: ${price_usd:.8f}\n\n"
+            f"⚡ [ ANALYZE ] [ TRADE ] [ TRACK ]"
+        )
+        
+        try:
+            await context.bot.send_message(
+                chat_id=GROUP_CHAT_ID,
+                message_thread_id=SIGNAL_TOPIC_ID,
+                text=signal_text
+            )
+            logger.info(f"Auto-signal sent: {token_symbol}")
+            break  # Kirim 1 signal terbaik per cycle
+        except Exception as e:
+            logger.error(f"Error sending signal: {e}")
+            break
+
+async def start_auto_announce(application: Application):
+    """Jalankan auto-announce setiap 30 detik"""
+    while True:
+        try:
+            await auto_announce_signals(application.bot)
+            await asyncio.sleep(30)
+        except Exception as e:
+            logger.error(f"Auto-announce error: {e}")
+            await asyncio.sleep(30)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
@@ -84,10 +171,6 @@ async def analyze_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
         
-    # Only respond to commands in the main group chat
-    if update.message.chat_id != GROUP_CHAT_ID:
-        return
-        
     tokens = update.message.text.split()
     if len(tokens) < 2 or tokens[0] != "/analyze":
         return
@@ -116,7 +199,6 @@ async def analyze_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message_thread_id=ANALYZE_TOPIC_ID,
             text=analysis_text
         )
-        # Optional: reply to user's message
         await update.message.reply_text("✅ Analisis dikirim ke #analyze!")
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
@@ -146,26 +228,19 @@ async def send_gas_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
-async def auto_announce_signal():
-    """Contoh fungsi auto-signal (akan dikembangkan hari berikutnya)"""
-    # Ini akan diisi dengan logika DexScreener polling
-    pass
-
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Handler untuk perintah pribadi (/start, dll)
+    # Handler untuk perintah
     application.add_handler(CommandHandler("start", start))
-    
-    # Handler untuk perintah di grup
     application.add_handler(CommandHandler("signal", send_signal_demo))
     application.add_handler(CommandHandler("analyze", analyze_token))
     application.add_handler(CommandHandler("gas", send_gas_alert))
     
-    # Jalankan bot
+    # Jalankan auto-announce di background thread
+    threading.Thread(target=lambda: asyncio.run(start_auto_announce(application)), daemon=True).start()
+    
     application.run_polling()
 
 if __name__ == "__main__":
     main()
-
-
