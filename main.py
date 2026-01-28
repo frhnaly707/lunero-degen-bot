@@ -14,6 +14,9 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Tambahkan ini di bawah load_dotenv()
+logger.info(f"SIGNAL_TOPIC_ID loaded: {os.getenv('SIGNAL_TOPIC_ID')}")
+
 # Setup logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -164,3 +167,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
