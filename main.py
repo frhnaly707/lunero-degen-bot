@@ -9,23 +9,10 @@ from handlers.signal_handler import send_signal_demo
 from handlers.analyze_handler import analyze_token
 from handlers.gas_handler import send_gas_alert
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = (
-        "🛡️ LUNERO DEGEN BOT — Forensic Intelligence Assistant\n\n"
-        "Semua aktivitas terjadi di grup:\n"
-        "👉 t.me/LuneroDegenHub\n\n"
-        "Perintah yang tersedia:\n"
-        "/signal — Kirim signal contoh ke #signal\n"
-        "/analyze [alamat] — Analisis token ke #analyze\n"
-        "/gas — Kirim alert gas ke #gas\n\n"
-        "⚠️ DISCLAIMER: 95% memecoin rug pull dalam 24 jam."
-    )
-    await update.message.reply_text(welcome_text)
+    await update.message.reply_text("🛡️ LUNERO DEGEN BOT aktif!")
 
 async def start_auto_announce(application: Application):
     while True:
