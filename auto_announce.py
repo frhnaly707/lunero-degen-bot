@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes
 from config import GROUP_CHAT_ID, SIGNAL_TOPIC_ID, ANALYZE_TOPIC_ID
 from analysis import generate_forensic_report
 
-DEXSCREENER_SOLANA_URL = "https://api.dexscreener.com/latest/dex/chains/solana"
+DEXSCREENER_SOLANA_URL = "https://api.dexscreener.io/latest/dex/chains/solana"
 
 async def fetch_new_pairs():
     try:
@@ -77,3 +77,4 @@ async def auto_announce_signals(context: ContextTypes.DEFAULT_TYPE):
             
 
         break
+
