@@ -1,15 +1,15 @@
 import logging
 import os
-import asyncio
-from telegram import Update, Message
-from telegram.ext import (
-    Application, 
-    CommandHandler, 
-    MessageHandler, 
-    ContextTypes,
-    filters
-)
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from dotenv import load_dotenv
+
+# ✅ Pastikan ini ada — tanpa ini, logger tidak dikenal
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -167,4 +167,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
